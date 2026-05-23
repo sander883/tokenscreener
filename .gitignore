@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.db
+*.sqlite
+data/seen_tokens.json
+data/filters.json
+.DS_Store
