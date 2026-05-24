@@ -10,10 +10,12 @@ from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     ApplicationBuilder,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
 )
 
+from . import menus
 from .filters import Filter, FilterStore, resolve_field
 from .formatter import EnrichedToken, format_alert, format_filter_summary
 from .screener import Screener
@@ -23,21 +25,16 @@ log = logging.getLogger(__name__)
 HELP_TEXT = (
     "🤖 *Token Screener Bot*\n\n"
     "Commands:\n"
-    "• `/filter` — lihat filter aktif\n"
-    "• `/setfilter <field> <value>` — ubah filter\n"
+    "• `/settings` — *menu interaktif* untuk semua setting (recommended)\n"
+    "• `/filter` — tampilkan filter aktif\n"
+    "• `/setfilter <field> <value>` — ubah filter manual\n"
     "   contoh: `/setfilter volume 500000`\n"
-    "   contoh: `/setfilter holders 1000`\n"
-    "   contoh: `/setfilter mc_max 25000000`\n"
-    "   contoh: `/setfilter smart_money 5`\n"
-    "   contoh: `/setfilter rug 0.2`\n"
-    "   contoh: `/setfilter fees off`  (matikan filter)\n"
+    "   contoh: `/setfilter age 30`\n"
+    "   contoh: `/setfilter holders off`\n"
     "• `/resetfilter` — kembalikan ke default\n"
     "• `/scan` — paksa scan sekarang juga\n"
     "• `/pause` & `/resume` — pause/lanjut auto-scan\n"
-    "• `/help` — tampilkan bantuan\n\n"
-    "Field yang bisa di-set:\n"
-    "`volume`, `mc_min`, `mc_max`, `age`, `liquidity`, `holders`,\n"
-    "`smart_money`, `rug`, `top10`, `txns`, `change`"
+    "• `/help` — tampilkan bantuan"
 )
 
 
@@ -60,12 +57,14 @@ class ScreenerBot:
     def _register_handlers(self) -> None:
         self.app.add_handler(CommandHandler("start", self.cmd_help))
         self.app.add_handler(CommandHandler("help", self.cmd_help))
+        self.app.add_handler(CommandHandler("settings", self.cmd_settings))
         self.app.add_handler(CommandHandler("filter", self.cmd_filter))
         self.app.add_handler(CommandHandler("setfilter", self.cmd_setfilter))
         self.app.add_handler(CommandHandler("resetfilter", self.cmd_resetfilter))
         self.app.add_handler(CommandHandler("scan", self.cmd_scan))
         self.app.add_handler(CommandHandler("pause", self.cmd_pause))
         self.app.add_handler(CommandHandler("resume", self.cmd_resume))
+        self.app.add_handler(CallbackQueryHandler(self.on_callback))
 
     async def cmd_help(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(HELP_TEXT, parse_mode=ParseMode.MARKDOWN)
@@ -123,6 +122,115 @@ class ScreenerBot:
         self.screener._stop.clear()  # type: ignore[attr-defined]
         self._screener_task = asyncio.create_task(self.screener.run_forever())
         await update.message.reply_text("▶️ Auto-scan resumed.")
+
+    # ─── Interactive /settings menu ──────────────────────────────────────
+
+    async def cmd_settings(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        text, kb = self._render_page("main")
+        await update.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+
+    def _render_page(self, page: str):
+        f = self.filter_store.current
+        if page == "main":
+            return menus.header_main(
+                f, self.screener.enable_gmgn, self._paused,
+                self.screener.poll_interval,
+            ), menus.kb_main(self.screener.enable_gmgn, self._paused)
+        if page == "screen":
+            return menus.header_screen(f), menus.kb_screen(f)
+        if page == "gmgn":
+            return menus.header_gmgn(f), menus.kb_gmgn(f)
+        if page == "sources":
+            return menus.header_sources(self.screener.enable_gmgn), menus.kb_sources(self.screener.enable_gmgn)
+        if page == "config":
+            return menus.header_config(f), menus.kb_config()
+        if page in menus.PRESET_PAGES:
+            return menus.header_preset(page, f), menus.kb_preset(page, f)
+        return menus.header_main(
+            f, self.screener.enable_gmgn, self._paused, self.screener.poll_interval,
+        ), menus.kb_main(self.screener.enable_gmgn, self._paused)
+
+    async def on_callback(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        query = update.callback_query
+        if not query or not query.data:
+            return
+        await query.answer()
+
+        data = query.data
+        parts = data.split(":", 2)
+        action = parts[0]
+
+        try:
+            if action == "close":
+                await query.message.delete()
+                return
+
+            if action == "nop":
+                return
+
+            if action == "nav":
+                page = parts[1] if len(parts) > 1 else "main"
+                text, kb = self._render_page(page)
+                await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+                return
+
+            if action == "set":
+                field, value = parts[1], parts[2]
+                self.filter_store.update(field, value)
+                # Cari page asal dari preset map biar balik ke parent yg bener
+                back_page = "main"
+                for page_name, (field_name, _, _, parent) in menus.PRESET_PAGES.items():
+                    if field_name == field:
+                        back_page = parent
+                        break
+                text, kb = self._render_page(back_page)
+                await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+                await query.answer(f"✅ {field} = {value}", show_alert=False)
+                return
+
+            if action == "tog":
+                key = parts[1]
+                if key == "gmgn":
+                    self.screener.enable_gmgn = not self.screener.enable_gmgn
+                elif key == "pause":
+                    self._paused = True
+                    self.screener.stop()
+                elif key == "resume":
+                    self._paused = False
+                    self.screener._stop.clear()  # type: ignore[attr-defined]
+                    self._screener_task = asyncio.create_task(self.screener.run_forever())
+                text, kb = self._render_page("main")
+                await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+                return
+
+            if action == "act":
+                act = parts[1]
+                if act == "scan":
+                    await query.answer("🔍 Scanning...", show_alert=False)
+                    try:
+                        count = await self.screener.tick()
+                        await ctx.bot.send_message(
+                            chat_id=query.message.chat_id,
+                            text=f"Selesai. {count} token cocok filter.",
+                        )
+                    except Exception as e:
+                        log.exception("manual scan failed")
+                        await ctx.bot.send_message(
+                            chat_id=query.message.chat_id, text=f"❌ Scan gagal: {e}",
+                        )
+                elif act == "reset":
+                    self.filter_store.reset()
+                    text, kb = self._render_page("main")
+                    await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+                    await query.answer("🔄 Filter direset", show_alert=False)
+                return
+
+        except Exception:
+            log.exception("callback %s failed", data)
+            try:
+                await query.answer("❌ Error, lihat log", show_alert=True)
+            except Exception:
+                pass
 
     async def _send_alert(self, et: EnrichedToken, f: Filter) -> None:
         text = format_alert(et, f)

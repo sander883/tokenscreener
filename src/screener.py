@@ -113,7 +113,8 @@ class Screener:
         self.enable_gmgn = enable_gmgn
         self.poll_interval = poll_interval
         self.dex = DexScreenerClient()
-        self.gmgn = GmgnClient() if enable_gmgn else None
+        # Always construct gmgn client so it can be toggled on at runtime.
+        self.gmgn = GmgnClient()
         self.seen = SeenStore()
         self._stop = asyncio.Event()
 
@@ -151,10 +152,12 @@ class Screener:
         sent = 0
         for snap in new_ones:
             enrichment = GmgnEnrichment()
-            if self.gmgn:
+            if self.gmgn and self.enable_gmgn:
                 enrichment = await self.gmgn.enrich(snap.address)
 
-            if not _passes_gmgn(enrichment, f):
+            # Kalau GMGN aktif, jalankan filter GMGN. Kalau off, skip
+            # filter GMGN supaya user tetep dapet hit dari DexScreener doang.
+            if self.enable_gmgn and not _passes_gmgn(enrichment, f):
                 # Token gagal di filter GMGN — jangan mark seen biar dicek
                 # lagi kalau next tick holders/fees udah naik.
                 continue
