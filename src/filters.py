@@ -20,8 +20,15 @@ class Filter:
     max_market_cap: Optional[float] = 18_000_000
     max_age_days: Optional[float] = 60
     min_liquidity: Optional[float] = 10_000
-    min_jupiter_fees_sol: Optional[float] = 24
     min_holders: Optional[int] = 700
+
+    # GMGN-specific filters
+    min_smart_money: Optional[int] = 3
+    max_rug_ratio: Optional[float] = 0.3
+    max_top_10_holder_rate: Optional[float] = 0.5
+
+    # Legacy field (deprecated - GMGN API tidak support jupiter fees)
+    min_jupiter_fees_sol: Optional[float] = None
 
     # Field opsional tambahan (bisa diaktifin nanti)
     min_txns_h1: Optional[int] = None
@@ -50,9 +57,16 @@ FIELD_ALIASES = {
     "age_days": "max_age_days",
     "liq": "min_liquidity",
     "liquidity": "min_liquidity",
+    "holders": "min_holders",
+    "smart_money": "min_smart_money",
+    "smart": "min_smart_money",
+    "rug": "max_rug_ratio",
+    "rug_ratio": "max_rug_ratio",
+    "top10": "max_top_10_holder_rate",
+    "concentration": "max_top_10_holder_rate",
+    # Legacy
     "fees": "min_jupiter_fees_sol",
     "jupiter_fees": "min_jupiter_fees_sol",
-    "holders": "min_holders",
     "txns": "min_txns_h1",
     "change": "min_price_change_h1_pct",
 }

@@ -28,14 +28,16 @@ HELP_TEXT = (
     "   contoh: `/setfilter volume 500000`\n"
     "   contoh: `/setfilter holders 1000`\n"
     "   contoh: `/setfilter mc_max 25000000`\n"
+    "   contoh: `/setfilter smart_money 5`\n"
+    "   contoh: `/setfilter rug 0.2`\n"
     "   contoh: `/setfilter fees off`  (matikan filter)\n"
     "• `/resetfilter` — kembalikan ke default\n"
     "• `/scan` — paksa scan sekarang juga\n"
     "• `/pause` & `/resume` — pause/lanjut auto-scan\n"
     "• `/help` — tampilkan bantuan\n\n"
     "Field yang bisa di-set:\n"
-    "`volume`, `mc_min`, `mc_max`, `age`, `liquidity`, `fees`, `holders`,\n"
-    "`txns`, `change`"
+    "`volume`, `mc_min`, `mc_max`, `age`, `liquidity`, `holders`,\n"
+    "`smart_money`, `rug`, `top10`, `txns`, `change`"
 )
 
 
