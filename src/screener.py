@@ -45,12 +45,25 @@ def _passes_dex_only(s: TokenSnapshot, f: Filter) -> bool:
 
 
 def _passes_gmgn(en: GmgnEnrichment, f: Filter) -> bool:
-    """Filter tambahan pakai data GMGN (holders, jupiter fees)."""
-    if f.min_jupiter_fees_sol is not None:
-        if en.jupiter_fees_sol is None or en.jupiter_fees_sol < f.min_jupiter_fees_sol:
-            return False
+    """Filter tambahan pakai data GMGN (holders, smart money, rug ratio, dll)."""
     if f.min_holders is not None:
         if en.holders is None or en.holders < f.min_holders:
+            return False
+    if f.min_smart_money is not None:
+        if en.smart_money_count is None or en.smart_money_count < f.min_smart_money:
+            return False
+    if f.max_rug_ratio is not None:
+        if en.rug_ratio is not None and en.rug_ratio > f.max_rug_ratio:
+            return False
+    if f.max_top_10_holder_rate is not None:
+        if en.top_10_holder_rate is not None and en.top_10_holder_rate > f.max_top_10_holder_rate:
+            return False
+    # Honeypot check — skip if flagged
+    if en.is_honeypot is True:
+        return False
+    # Legacy jupiter fees filter (deprecated, jarang available)
+    if f.min_jupiter_fees_sol is not None:
+        if en.jupiter_fees_sol is not None and en.jupiter_fees_sol < f.min_jupiter_fees_sol:
             return False
     return True
 

@@ -21,6 +21,18 @@ class EnrichedToken:
     def jupiter_fees_sol(self) -> Optional[float]:
         return self.enrichment.jupiter_fees_sol
 
+    @property
+    def smart_money_count(self) -> Optional[int]:
+        return self.enrichment.smart_money_count
+
+    @property
+    def rug_ratio(self) -> Optional[float]:
+        return self.enrichment.rug_ratio
+
+    @property
+    def top_10_holder_rate(self) -> Optional[float]:
+        return self.enrichment.top_10_holder_rate
+
 
 def _fmt_money(v: Optional[float]) -> str:
     if v is None:
@@ -44,6 +56,12 @@ def _fmt_num(v) -> str:
     if v is None:
         return "n/a"
     return f"{v:,}"
+
+
+def _fmt_pct(v: Optional[float]) -> str:
+    if v is None:
+        return "n/a"
+    return f"{v*100:.1f}%"
 
 
 def _line(active: bool, text: str) -> str:
@@ -79,17 +97,37 @@ def format_alert(et: EnrichedToken, f: Filter) -> str:
             (s.liquidity_usd or 0) >= f.min_liquidity,
             f"Liquidity >= {_fmt_money(f.min_liquidity)}",
         ))
-    if f.min_jupiter_fees_sol is not None:
-        filter_lines.append(_line(
-            (et.jupiter_fees_sol or 0) >= f.min_jupiter_fees_sol,
-            f"Jupiter Fees >= {f.min_jupiter_fees_sol:g} SOL",
-        ))
     if f.min_holders is not None:
         filter_lines.append(_line(
             (et.holders or 0) >= f.min_holders,
             f"Holders >= {_fmt_num(f.min_holders)}",
         ))
+    if f.min_smart_money is not None:
+        filter_lines.append(_line(
+            (et.smart_money_count or 0) >= f.min_smart_money,
+            f"Smart Money >= {_fmt_num(f.min_smart_money)}",
+        ))
+    if f.max_rug_ratio is not None:
+        filter_lines.append(_line(
+            et.rug_ratio is None or et.rug_ratio <= f.max_rug_ratio,
+            f"Rug Ratio <= {f.max_rug_ratio:.1%}",
+        ))
+    if f.max_top_10_holder_rate is not None:
+        filter_lines.append(_line(
+            et.top_10_holder_rate is None or et.top_10_holder_rate <= f.max_top_10_holder_rate,
+            f"Top 10 Holder Rate <= {f.max_top_10_holder_rate:.0%}",
+        ))
 
+    # Metrics section
+    metrics_volume_h1 = _fmt_money(s.volume_h1) if s.volume_h1 is not None else "n/a"
+    metrics_mc = _fmt_money(s.market_cap) if s.market_cap is not None else "n/a"
+    metrics_liq = _fmt_money(s.liquidity_usd) if s.liquidity_usd is not None else "n/a"
+    metrics_holders = _fmt_num(et.holders) if et.holders is not None else "n/a"
+    metrics_smart = _fmt_num(et.smart_money_count) if et.smart_money_count is not None else "n/a"
+    metrics_rug = f"{et.rug_ratio:.2f}" if et.rug_ratio is not None else "n/a"
+    metrics_top10 = _fmt_pct(et.top_10_holder_rate) if et.top_10_holder_rate is not None else "n/a"
+
+    # Active filter summary
     active_lines = []
     if f.min_volume_h1 is not None:
         active_lines.append(f"Volume 1H: >= {_fmt_money(f.min_volume_h1)}")
@@ -101,36 +139,34 @@ def format_alert(et: EnrichedToken, f: Filter) -> str:
         active_lines.append(f"Age: <= {f.max_age_days:g} days")
     if f.min_liquidity is not None:
         active_lines.append(f"Liquidity: >= {_fmt_money(f.min_liquidity)}")
-    if f.min_jupiter_fees_sol is not None:
-        active_lines.append(f"Jupiter Fees: >= {f.min_jupiter_fees_sol:g} SOL")
     if f.min_holders is not None:
         active_lines.append(f"Holders: >= {_fmt_num(f.min_holders)}")
-
-    metrics_volume_h1 = _fmt_money(s.volume_h1) if s.volume_h1 is not None else "n/a"
-    metrics_mc = _fmt_money(s.market_cap) if s.market_cap is not None else "n/a"
-    metrics_liq = _fmt_money(s.liquidity_usd) if s.liquidity_usd is not None else "n/a"
-    metrics_fees = (
-        f"{et.jupiter_fees_sol:.2f} SOL" if et.jupiter_fees_sol is not None else "n/a"
-    )
-    metrics_holders = _fmt_num(et.holders) if et.holders is not None else "n/a"
+    if f.min_smart_money is not None:
+        active_lines.append(f"Smart Money: >= {_fmt_num(f.min_smart_money)}")
+    if f.max_rug_ratio is not None:
+        active_lines.append(f"Rug Ratio: <= {f.max_rug_ratio:.1%}")
+    if f.max_top_10_holder_rate is not None:
+        active_lines.append(f"Top 10 Holder Rate: <= {f.max_top_10_holder_rate:.0%}")
 
     return (
-        "🚀 ASTRA GMGN TOKEN PASSED FILTER\n\n"
+        "🚀 TOKEN PASSED FILTER\n\n"
         f"Token: {s.symbol} / {s.name}\n"
-        f"CA: {addr}\n\n"
-        "GMGN Metrics:\n"
-        f"Volume 1H: {metrics_volume_h1}\n"
-        f"Market Cap: {metrics_mc}\n"
-        f"Age: {_fmt_age(s.age_days)}\n"
-        f"Liquidity: {metrics_liq}\n"
-        f"Total Jupiter Fees: {metrics_fees}\n"
-        f"Holders: {metrics_holders}\n\n"
-        "Filter:\n" + "\n".join(filter_lines) + "\n\n"
-        "Active Filter:\n" + "\n".join(active_lines) + "\n\n"
-        "Links:\n"
-        f"GMGN:\nhttps://gmgn.ai/sol/token/{addr}\n"
-        f"Dexscreener:\nhttps://dexscreener.com/solana/{addr}\n"
-        f"Birdeye:\nhttps://birdeye.so/token/{addr}?chain=solana"
+        f"CA: `{addr}`\n\n"
+        "📊 Metrics:\n"
+        f"• Volume 1H: {metrics_volume_h1}\n"
+        f"• Market Cap: {metrics_mc}\n"
+        f"• Age: {_fmt_age(s.age_days)}\n"
+        f"• Liquidity: {metrics_liq}\n"
+        f"• Holders: {metrics_holders}\n"
+        f"• Smart Money: {metrics_smart}\n"
+        f"• Rug Ratio: {metrics_rug}\n"
+        f"• Top 10 Holder Rate: {metrics_top10}\n\n"
+        "🔍 Filter Check:\n" + "\n".join(filter_lines) + "\n\n"
+        "⚙️ Active Filter:\n" + "\n".join(active_lines) + "\n\n"
+        "🔗 Links:\n"
+        f"• GMGN: https://gmgn.ai/sol/token/{addr}\n"
+        f"• Dexscreener: https://dexscreener.com/solana/{addr}\n"
+        f"• Birdeye: https://birdeye.so/token/{addr}?chain=solana"
     )
 
 
@@ -146,10 +182,16 @@ def format_filter_summary(f: Filter) -> str:
         lines.append(f"• Age <= {f.max_age_days:g} days")
     if f.min_liquidity is not None:
         lines.append(f"• Liquidity >= {_fmt_money(f.min_liquidity)}")
-    if f.min_jupiter_fees_sol is not None:
-        lines.append(f"• Jupiter Fees >= {f.min_jupiter_fees_sol:g} SOL")
     if f.min_holders is not None:
         lines.append(f"• Holders >= {_fmt_num(f.min_holders)}")
+    if f.min_smart_money is not None:
+        lines.append(f"• Smart Money >= {_fmt_num(f.min_smart_money)}")
+    if f.max_rug_ratio is not None:
+        lines.append(f"• Rug Ratio <= {f.max_rug_ratio:.1%}")
+    if f.max_top_10_holder_rate is not None:
+        lines.append(f"• Top 10 Holder Rate <= {f.max_top_10_holder_rate:.0%}")
+    if f.min_jupiter_fees_sol is not None:
+        lines.append(f"• Jupiter Fees >= {f.min_jupiter_fees_sol:g} SOL (legacy)")
     if f.min_txns_h1 is not None:
         lines.append(f"• Txns 1H >= {_fmt_num(f.min_txns_h1)}")
     if f.min_price_change_h1_pct is not None:
